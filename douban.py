@@ -12,24 +12,21 @@ import time
 
 class DouBanSpider(object):
     """类的简要说明
-    本类主要用于抓取豆瓣前100的电影名称
-
-    Attributes:
-        page: 用于表示当前所处的抓取页面
-        cur_url: 用于表示当前争取抓取页面的url
-        datas: 存储处理好的抓取到的电影名称
-        _top_num: 用于记录当前的top号码
+    本类主要用于抓取豆瓣热门电影
     """
 
     def __init__(self):
+        # https://movie.douban.com/subject/1292052/reviews?start=1&filter=&limit=10
         self.page = 1
         self.cur_url = "https://movie.douban.com/review/best/?start={top}"
-        self.cur_url2 = "https://movie.douban.com/subject/{move_id}/reviews?start=21&filter=&limit=20"
+        self.cur_url2 = "https://movie.douban.com/subject/%s/reviews?start=%s&filter=&limit=20"
         self.datas = []
-        self._top_num = 1
+        self.length = 0
+        self.movie_id = []
+        self.user_data = []
         print "豆瓣电影爬虫准备就绪, 准备爬取数据..."
 
-    def get_page(self, cur_page):
+    def get_page(self, cur_page, url):
         """
         根据当前页码爬取网页HTML
         Args:
@@ -39,10 +36,22 @@ class DouBanSpider(object):
         Raises:
             URLError:url引发的异常
         """
-        url = self.cur_url
         try:
             # print url.format(top=(cur_page - 1) * 10)
             my_page = urllib2.urlopen(url.format(top=(cur_page - 1) * 10)).read().decode("utf-8")
+        except urllib2.URLError, e:
+            if hasattr(e, "code"):
+                print "The server couldn't fulfill the request."
+                print "Error code: %s" % e.code
+            elif hasattr(e, "reason"):
+                print "We failed to reach a server. Please check your url and read the Reason"
+                print "Reason: %s" % e.reason
+        return my_page
+
+    def get_sec_page(self, url):
+        try:
+            # print url.format(top=(cur_page - 1) * 10)
+            my_page = urllib2.urlopen(url).read().decode("utf-8")
         except urllib2.URLError, e:
             if hasattr(e, "code"):
                 print "The server couldn't fulfill the request."
@@ -71,51 +80,23 @@ class DouBanSpider(object):
         temp_data = []
         soup = bs4.BeautifulSoup(my_page, "lxml")
         items = soup.select(".obss")
-        print "#######"
+        # print "#######"
         for i in items:
             score = 0
-            # print i
-            # print i.attrs["class"]
             jj = i.find_all("span")
             for j in jj:
                 cc = j.attrs.get("class")[0]
                 # print cc
                 if cc[:3] == "all":
                     score = cc[-2:-1]
-                    print "score %s" % (cc[-2:-1])
-            # print i.a.string
-            # print i
+                    # print "score %s" % (cc[-2:-1])
             e = i.find_all('a')
             # print type(e)
             data = e[1].get("href").split("/")[-2]
             text = e[1].get_text().strip()
             # print data, text, score
+            self.movie_id.append(data)
             temp_data.append(data + "," + text + "," + score)
-            # for ii in e:
-            #     print type(ii)
-            #     data = ii.get("href")
-            #     text = ii
-            #     print data, text
-        # items = soup.select(".ilst a")
-        # for i in items:
-        #     print i
-        #     e = i.attrs.get("href").split("/")[-2:-1]
-        #     print e
-        #     title = i.attrs.get("title")
-        #     temp_data.append(e[0] + "," + title)
-        # print(temp_data)
-        # for index, item in enumerate(items):
-        #     print index, item
-        # print my_page
-        # temp_data = []
-        # <li class="ilst" style="clear:both;">
-        # movie_items = re.findall(r'<li class="ilst".*?>(.*?)</li>', my_page, re.S)
-        # print movie_items
-        # for index, item in enumerate(movie_items):
-        #     print index, item
-        #     if item.find("&nbsp") == -1 :
-        #         temp_data.append("Top" + str(self._top_num) + " " + item)
-        #         self._top_num += 1
         self.datas.extend(temp_data)
 
     def start_spider(self):
@@ -124,11 +105,71 @@ class DouBanSpider(object):
         """
 
         while self.page <= 5:
-            my_page = self.get_page(self.page)
+            my_page = self.get_page(self.page, self.cur_url)
             self.find_title(my_page)
             self.page += 1
-            time.sleep(0.1)
+            # time.sleep(0.1)
 
+    def get_page_length(self, url):
+        length = 0
+        try:
+            # print url
+            my_page = urllib2.urlopen(url).read().decode("utf-8")
+            soup = bs4.BeautifulSoup(my_page, "lxml")
+            length = re.sub(r'\D', "", soup.h1.string)
+        except urllib2.URLError, e:
+            if hasattr(e, "code"):
+                print "The server couldn't fulfill the request."
+                print "Error code: %s" % e.code
+            elif hasattr(e, "reason"):
+                print "We failed to reach a server. Please check your url and read the Reason"
+                print "Reason: %s" % e.reason
+        return int(length)
+
+    def start_score(self):
+        # https://movie.douban.com/subject/1292052/reviews
+        # get deep length
+        print "正在获取 %s 部电影的用户评分..." % (self.movie_id.__len__())
+        jjj = 0
+        for id in self.movie_id:
+            jjj += 1
+            url = "https://movie.douban.com/subject/%s/reviews" % (id)
+            llen = self.get_page_length(url)
+            print "第%s部电影 %s 有 %s 条评论" %(jjj, int(id), llen)
+            score = 0
+            temp_data = []
+            # print len
+            deep = llen / 20
+            step = 0
+            while step <= deep:
+                print "电影%s, 步长%s, 第%s条评论到%s评论..."%(id, step, step*20, (step + 1)*20)
+                time.sleep(0.2)
+                # print self.cur_url2
+                cur_url2 = self.cur_url2 % (id, step * 20)
+                # print cur_url2
+                my_page = self.get_sec_page(cur_url2)
+                # print my_page
+                soup = bs4.BeautifulSoup(my_page, "lxml")
+                item = soup.select(".review-hd-info")
+                '''
+                <div class="review-hd-info">
+                    <a class="" href="https://www.douban.com/people/141383200/">打扰</a>
+                    2016-03-13 18:37:50
+                    <span class="allstar50" title="力荐"></span>
+                </div>
+                '''
+                for i in item:
+                    user_id = i.a.get("href").split("/")[-2]
+                    cc = i.span.attrs.get("class")[0]
+                    if cc[:3] == "all":
+                        score = cc[-2]
+                        # print score
+                    temp_data.append(user_id + "," + id + "," + score)
+                # break
+            #     self.find_user_movieid_score(my_page)
+                step += 1
+            # break
+        self.user_data.extend(temp_data)
 
 def main():
         print """
@@ -138,19 +179,36 @@ def main():
             ###############################
         """
         my_spider = DouBanSpider()
+        print "查找热门电影"
         my_spider.start_spider()
         if not os.path.exists("./data/"):
             os.makedirs("./data/")
-        f = open("data/douba_film_name_100.txt", 'w')
+        # 找到热门电影
+        # f = open("data/douba_film_name_100.txt", 'w')
+        # try:
+        #     for item in my_spider.datas:
+        #         f.write(item.encode("utf-8")+"\n")
+        #         print item
+        # except IOError as e:
+        #     print e
+        # finally:
+        #     f.close()
+        # 找到用户评分
+        print "查找这些电影的用户评分"
+        my_spider.start_score()
+        i = 0
         try:
-            for item in my_spider.datas:
-                f.write(item.encode("utf-8")+"\n")
+            f = open("data/user_score.txt", 'w')
+            for item in my_spider.user_data:
                 print item
+                f.write(item.encode("utf-8")+"\n")
+                i += 1
         except IOError as e:
-            print e
+            print(e)
         finally:
             f.close()
-            print "豆瓣爬虫爬取结束..."
+        print i
+        print "豆瓣爬虫爬取结束..."
 
 if __name__ == '__main__':
     main()
