@@ -8,24 +8,51 @@ import urllib2
 import bs4
 import os
 import time
+import requests
 
 
 class DouBanSpider(object):
-    """类的简要说明
-    本类主要用于抓取豆瓣热门电影
-    """
 
     def __init__(self):
         # https://movie.douban.com/subject/1292052/reviews?start=1&filter=&limit=10
         self.page = 1
-        self.cur_url = "https://movie.douban.com/review/best/?start={top}"
-        self.cur_url2 = "https://movie.douban.com/subject/%s/reviews?start=%s&filter=&limit=20"
+        self.cur_url = "https://movie.douban.com/top250?start=%s&filter=" #"https://movie.douban.com/review/best/?start={top}"
+        self.cur_url2 = "https://movie.douban.com/subject/%s/comments?start=%s&limit=20&sort=new_score" #https://movie.douban.com/subject/%s/collections?start=%s"#"https://movie.douban.com/subject/%s/reviews?start=%s&filter=&limit=20"
         self.datas = []
         self.length = 0
         self.movie_id = []
         self.user_data = []
         print "豆瓣电影爬虫准备就绪, 准备爬取数据..."
 
+    def login_douban(self):
+        print "正在登录豆瓣..."
+
+        # -- Login Start --
+        postUrl = 'https://accounts.douban.com/login?source=movie'
+        originUrl = "https://accounts.douban.com"
+        user_agent = 'Mozilla/5.0 (Windows NT 5.1; rv:31.0) Gecko/20100101 Firefox/31.0'
+        headers = {'User-Agent': user_agent,
+                    'Connection': 'keep-alive',
+                    'Referer': postUrl,
+                    'origin': originUrl
+                   }
+        self.s = requests.Session()
+        # Get userName and password
+        userName = "912657650@qq.com" #raw_input('Enter your userName:')
+        password = raw_input('Enter your password:')
+        # Post loginform
+        payload = {'source': 'movie',
+                    'alias': userName,
+                    'form_password': password,
+                    'form_email': userName,
+                    'login': u'登录'
+                    }
+        r = self.s.post(postUrl, data=payload, headers=headers)
+        if r.ok:
+            print "登录成功"
+        # print r.raise_for_status()  # check status code
+
+        # -- Login End --
     def get_page(self, cur_page, url):
         """
         根据当前页码爬取网页HTML
@@ -38,7 +65,8 @@ class DouBanSpider(object):
         """
         try:
             # print url.format(top=(cur_page - 1) * 10)
-            my_page = urllib2.urlopen(url.format(top=(cur_page - 1) * 10)).read().decode("utf-8")
+            print url.format(top=(cur_page - 1) * 25)
+            my_page = urllib2.urlopen(url.format(top=(cur_page - 1) * 25)).read().decode("utf-8")
         except urllib2.URLError, e:
             if hasattr(e, "code"):
                 print "The server couldn't fulfill the request."
@@ -69,34 +97,55 @@ class DouBanSpider(object):
             my_page: 传入页面的HTML文本用于正则匹配
         """
         '''
-        <span class="pl ll obss">
-            <span class="starb">
-                <a href="https://www.douban.com/people/58847654/">回望长安已苍老</a>
-            </span>
-            评论: <a href="https://movie.douban.com/subject/25760615/"> 《回溯迷踪》</a>
-            <span class="allstar20" title="较差"></span>
-        </span>
+        <div class="item">
+        <div class="pic">
+        <em class="">1</em>
+        <a href="https://movie.douban.com/subject/1292052/">
+        <img alt="肖申克的救赎" class="" src="https://img3.doubanio.com/view/movie_poster_cover/ipst/public/p480747492.jpg"/>
+        </a>
+        </div>
+        <div class="info">
+        <div class="hd">
+        <a class="" href="https://movie.douban.com/subject/1292052/">
+        <span class="title">肖申克的救赎</span>
+        <span class="title"> / The Shawshank Redemption</span>
+        <span class="other"> / 月黑高飞(港)  /  刺激1995(台)</span>
+        </a>
+        <span class="playable">[可播放]</span>
+        </div>
+        <div class="bd">
+        <p class="">
+                                    导演: 弗兰克·德拉邦特 Frank Darabont   主演: 蒂姆·罗宾斯 Tim Robbins /...<br/>
+                                    1994 / 美国 / 犯罪 剧情
+                                </p>
+        <div class="star">
+        <span class="rating5-t"></span>
+        <span class="rating_num" property="v:average">9.6</span>
+        <span content="10.0" property="v:best"></span>
+        <span>688195人评价</span>
+        </div>
+        <p class="quote">
+        <span class="inq">希望让人自由。</span>
+        </p>
+        </div>
+        </div>
+        </div>
         '''
         temp_data = []
         soup = bs4.BeautifulSoup(my_page, "lxml")
-        items = soup.select(".obss")
-        # print "#######"
+        items = soup.select(".item")
+        print "#######"
         for i in items:
-            score = 0
-            jj = i.find_all("span")
-            for j in jj:
-                cc = j.attrs.get("class")[0]
-                # print cc
-                if cc[:3] == "all":
-                    score = cc[-2:-1]
-                    # print "score %s" % (cc[-2:-1])
-            e = i.find_all('a')
-            # print type(e)
-            data = e[1].get("href").split("/")[-2]
-            text = e[1].get_text().strip()
-            # print data, text, score
-            self.movie_id.append(data)
-            temp_data.append(data + "," + text + "," + score)
+            movie_id = i.a.get("href").split("/")[-2]
+            title = i.span.string
+            e = i.select(".star")
+            for ee in e:
+                eee = ee.find_all("span")
+                score = eee[1].get_text().strip()
+                total_score_person = re.sub(r'\D', "", eee[3].get_text())  # i.span["rating_num"].string[:-3]
+            # print movie_id, title, score, total_score_person
+            a = [movie_id, title, score, total_score_person]
+            temp_data.append(a)
         self.datas.extend(temp_data)
 
     def start_spider(self):
@@ -104,11 +153,19 @@ class DouBanSpider(object):
         爬虫入口, 并控制爬虫抓取页面的范围
         """
 
-        while self.page <= 5:
-            my_page = self.get_page(self.page, self.cur_url)
+        while self.page <= 10:
+            # my_page = self.get_page(self.page, self.cur_url)
+            url = self.cur_url % (self.page)
+            print url
+            r = self.s.get(url)
+            if r.status_code == 200:
+                my_page = r.text
+            else:
+                print "get my_page error, continue"
+                continue
             self.find_title(my_page)
             self.page += 1
-            # time.sleep(0.1)
+            time.sleep(0.1)
 
     def get_page_length(self, url):
         length = 0
@@ -129,86 +186,111 @@ class DouBanSpider(object):
     def start_score(self):
         # https://movie.douban.com/subject/1292052/reviews
         # get deep length
-        print "正在获取 %s 部电影的用户评分..." % (self.movie_id.__len__())
+        print "正在获取 %s 部电影的用户评分..." % (self.datas.__len__())
         jjj = 0
-        for id in self.movie_id:
+        for i in self.datas:
             jjj += 1
-            url = "https://movie.douban.com/subject/%s/reviews" % (id)
-            llen = self.get_page_length(url)
-            print "第%s部电影 %s 有 %s 条评论" %(jjj, int(id), llen)
-            score = 0
+            # url = "https://movie.douban.com/subject/%s/reviews" % (id)
+            url = self.cur_url2 % (i[0], 20)
+            r = self.s.get(url)
+            if r.ok:
+                my_page = r.text
+                soup = bs4.BeautifulSoup(my_page, "lxml")
+                # print soup.select(".total")
+                l = soup.select(".total")[0].string
+                # print l
+
+                llen = int(re.sub(r'\D', "", l))
+                print llen
+            else:
+                llen = 0
+            # llen = self.get_page_length(url)
+            # llen = int(i[3])
+            print "第%s部电影 %s 有 %s 条评论" %(jjj, i[1].encode("utf-8"), llen)
+            # score = 0
             temp_data = []
             # print len
             deep = llen / 20
             step = 0
+            if llen == 0:
+                continue
+
             while step <= deep:
-                print "电影%s, 步长%s, 第%s条评论到%s评论..."%(id, step, step*20, (step + 1)*20)
-                time.sleep(0.2)
+                # user_l = []
+                # score_l = []
+                print "电影%s, 步长%s, 第%s条评论到%s评论..."%(i[1].encode("utf-8"), step, 20*step, 20*(step + 1))
+                time.sleep(2)
                 # print self.cur_url2
-                cur_url2 = self.cur_url2 % (id, step * 20)
-                # print cur_url2
-                my_page = self.get_sec_page(cur_url2)
+                cur_url2 = self.cur_url2 % (i[0], step * 20)
+                print cur_url2
+                # my_page = self.get_sec_page(cur_url2)
+                r = self.s.get(cur_url2)
+                if r.status_code == 200:
+                    my_page = r.text
+                else:
+                    print "get my_page error continue"
+                    step += 1
+                    continue
                 # print my_page
                 soup = bs4.BeautifulSoup(my_page, "lxml")
-                item = soup.select(".review-hd-info")
-                '''
-                <div class="review-hd-info">
-                    <a class="" href="https://www.douban.com/people/141383200/">打扰</a>
-                    2016-03-13 18:37:50
-                    <span class="allstar50" title="力荐"></span>
-                </div>
-                '''
-                for i in item:
-                    user_id = i.a.get("href").split("/")[-2]
-                    cc = i.span.attrs.get("class")[0]
-                    if cc[:3] == "all":
-                        score = cc[-2]
-                        # print score
-                    temp_data.append(user_id + "," + id + "," + score)
-                # break
-            #     self.find_user_movieid_score(my_page)
+                item = soup.select('.comment-info')
+                for j in item:
+                    user_id = j.a.get("href").split("/")[-2]
+                    class_info = j.span.attrs.get("class")
+                    if class_info:
+                        score = "3"
+                    else:
+                        score = class_info[0][-2]
+                    temp_data.append(",".join([i[0], user_id, score]))
                 step += 1
+                # 最多400个评论就走了
+                if step > 20:
+                    break
+                # break
             # break
         self.user_data.extend(temp_data)
 
-def main():
-        print """
-            ###############################
-                一个简单的豆瓣电影热门爬虫
-                Author:M2shad0w
-            ###############################
-        """
-        my_spider = DouBanSpider()
-        print "查找热门电影"
-        my_spider.start_spider()
-        if not os.path.exists("./data/"):
-            os.makedirs("./data/")
-        # 找到热门电影
-        # f = open("data/douba_film_name_100.txt", 'w')
-        # try:
-        #     for item in my_spider.datas:
-        #         f.write(item.encode("utf-8")+"\n")
-        #         print item
-        # except IOError as e:
-        #     print e
-        # finally:
-        #     f.close()
-        # 找到用户评分
-        print "查找这些电影的用户评分"
-        my_spider.start_score()
-        i = 0
-        try:
-            f = open("data/user_score.txt", 'w')
-            for item in my_spider.user_data:
-                print item
-                f.write(item.encode("utf-8")+"\n")
-                i += 1
-        except IOError as e:
-            print(e)
-        finally:
-            f.close()
-        print i
-        print "豆瓣爬虫爬取结束..."
 
 if __name__ == '__main__':
-    main()
+    # main()
+    print """
+    ###############################
+        一个简单的豆瓣电影top250爬虫
+        Author:M2shad0w
+    ###############################
+    """
+    my_spider = DouBanSpider()
+    my_spider.login_douban()
+
+    print "查找top250电影"
+    my_spider.start_spider()
+    if not os.path.exists("./data/"):
+        os.makedirs("./data/")
+    # 找到热门电影
+    f = open("data/douba_film_name_top_250.txt", 'w')
+    try:
+        for item in my_spider.datas:
+            f.write(",".join(item).encode("utf-8") + "\n")
+            print item
+    except IOError as e:
+        print e
+    finally:
+        print "get all top 250 movie and writing 2 file ..."
+        f.close()
+    # 找到用户评分
+    # print "查找这些电影的用户评分"
+    my_spider.start_score()
+    i = 0
+    try:
+        f = open("data/user_score.txt", 'w')
+        for item in my_spider.user_data:
+            print item
+            f.write(item.encode("utf-8")+"\n")
+            i += 1
+    except IOError as e:
+        print(e)
+    finally:
+        print "将评论存入文件..."
+        f.close()
+    print i
+    print "豆瓣爬虫爬取结束..."
