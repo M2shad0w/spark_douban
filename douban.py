@@ -188,68 +188,86 @@ class DouBanSpider(object):
         # get deep length
         print "正在获取 %s 部电影的用户评分..." % (self.datas.__len__())
         jjj = 0
-        for i in self.datas:
-            jjj += 1
-            # url = "https://movie.douban.com/subject/%s/reviews" % (id)
-            url = self.cur_url2 % (i[0], 20)
-            r = self.s.get(url)
-            if r.ok:
-                my_page = r.text
-                soup = bs4.BeautifulSoup(my_page, "lxml")
-                # print soup.select(".total")
-                l = soup.select(".total")[0].string
-                # print l
-
-                llen = int(re.sub(r'\D', "", l))
-                print llen
-            else:
-                llen = 0
-            # llen = self.get_page_length(url)
-            # llen = int(i[3])
-            print "第%s部电影 %s 有 %s 条评论" %(jjj, i[1].encode("utf-8"), llen)
-            # score = 0
-            temp_data = []
-            # print len
-            deep = llen / 20
-            step = 0
-            if llen == 0:
-                continue
-
-            while step <= deep:
-                # user_l = []
-                # score_l = []
-                print "电影%s, 步长%s, 第%s条评论到%s评论..."%(i[1].encode("utf-8"), step, 20*step, 20*(step + 1))
-                time.sleep(2)
-                # print self.cur_url2
-                cur_url2 = self.cur_url2 % (i[0], step * 20)
-                print cur_url2
-                # my_page = self.get_sec_page(cur_url2)
-                r = self.s.get(cur_url2)
-                if r.status_code == 200:
+        try:
+            for i in self.datas:
+                jjj += 1
+                # url = "https://movie.douban.com/subject/%s/reviews" % (id)
+                url = self.cur_url2 % (i[0], 20)
+                r = self.s.get(url)
+                if r.ok:
                     my_page = r.text
-                else:
-                    print "get my_page error continue"
-                    step += 1
-                    continue
-                # print my_page
-                soup = bs4.BeautifulSoup(my_page, "lxml")
-                item = soup.select('.comment-info')
-                for j in item:
-                    user_id = j.a.get("href").split("/")[-2]
-                    class_info = j.span.attrs.get("class")
-                    if class_info:
-                        score = "3"
-                    else:
-                        score = class_info[0][-2]
-                    temp_data.append(",".join([i[0], user_id, score]))
-                step += 1
-                # 最多400个评论就走了
-                if step > 20:
-                    break
-                # break
-            # break
-        self.user_data.extend(temp_data)
+                    soup = bs4.BeautifulSoup(my_page, "lxml")
+                    # print soup.select(".total")
+                    l = soup.select(".total")[0].string
+                    # print l
 
+                    llen = int(re.sub(r'\D', "", l))
+                    print llen
+                else:
+                    llen = 0
+                # llen = self.get_page_length(url)
+                # llen = int(i[3])
+                print "第%s部电影 %s 有 %s 条评论" %(jjj, i[1].encode("utf-8"), llen)
+                # score = 0
+                temp_data = []
+                # print len
+                deep = llen / 20
+                step = 0
+                if llen == 0:
+                    continue
+                while step <= deep:
+                    # user_l = []
+                    # score_l = []
+                    print "电影%s, 步长%s, 第%s条评论到%s评论..."%(i[1].encode("utf-8"), step, 20*step, 20*(step + 1))
+                    time.sleep(0.1)
+                    # print self.cur_url2
+                    cur_url2 = self.cur_url2 % (i[0], step * 20)
+                    # print cur_url2
+                    # my_page = self.get_sec_page(cur_url2)
+                    r = self.s.get(cur_url2)
+                    if r.status_code == 200:
+                        my_page = r.text
+                    else:
+                        print "get my_page error continue"
+                        step += 1
+                        continue
+                    # print my_page
+                    soup = bs4.BeautifulSoup(my_page, "lxml")
+                    item = soup.select('.comment-info')
+                    for j in item:
+                        user_id = j.a.get("href").split("/")[-2]
+                        class_info = j.span.attrs.get("class")
+                        if class_info:
+                            score = "3"
+                        else:
+                            score = class_info[0][-2]
+                        temp_data.append(",".join([i[0], user_id, score]))
+                    step += 1
+                    # 最多400个评论就走了
+                    if step >= 10:
+                        break
+                    # break
+                # break
+                self.user_data.extend(temp_data)
+        finally:
+            # 跑着就Connection aborted了
+
+            self.userscore2file()
+
+    def userscore2file(self):
+        i = 0
+        try:
+            f = open("data/user_score.txt", 'w')
+            for item in self.user_data:
+                print item
+                f.write(item.encode("utf-8") + "\n")
+                i += 1
+        except IOError as e:
+            print(e)
+        finally:
+            print "将评论存入文件..."
+            f.close()
+        print i
 
 if __name__ == '__main__':
     # main()
@@ -280,17 +298,4 @@ if __name__ == '__main__':
     # 找到用户评分
     # print "查找这些电影的用户评分"
     my_spider.start_score()
-    i = 0
-    try:
-        f = open("data/user_score.txt", 'w')
-        for item in my_spider.user_data:
-            print item
-            f.write(item.encode("utf-8")+"\n")
-            i += 1
-    except IOError as e:
-        print(e)
-    finally:
-        print "将评论存入文件..."
-        f.close()
-    print i
     print "豆瓣爬虫爬取结束..."
